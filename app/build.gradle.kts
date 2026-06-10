@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val appVersionName = "0.0.1.0"
+
 android {
     namespace = "com.pseddev.pianodroid"
     compileSdk = 35
@@ -13,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = appVersionName
     }
 
     compileOptions {
@@ -27,6 +29,10 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+base {
+    archivesName = "PianoDroid-$appVersionName"
 }
 
 dependencies {

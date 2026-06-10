@@ -64,6 +64,8 @@ Check current status with `ContextCompat.checkSelfPermission` on entry; request 
 **Technical Notes:**
 `ENCODING_PCM_FLOAT` is available from API 23, below our `minSdk 26`, so no 16-bit fallback path is needed. Tying the `AudioRecord` lifecycle to flow collection (start on first collect, release in `awaitClose`) means the ViewModel controls capture simply by collecting or cancelling — no separate `start()`/`stop()` API to keep in sync. Verify `AudioRecord.state == STATE_INITIALIZED` after construction and fail the flow cleanly if not (some emulators lack mic support).
 
+*As implemented:* a plain `flow { }` with `flowOn(Dispatchers.IO)` turned out simpler than `callbackFlow` — `AudioRecord.read(..., READ_BLOCKING)` is just a blocking loop, `emit()` provides the cancellation point, and a `finally` block (rather than `awaitClose`) stops and releases the recorder. Each emission is a defensive `copyOf()` of the reusable read buffer.
+
 ---
 
 ### Phase 4: Pitch Detection
@@ -83,6 +85,8 @@ Check current status with `ContextCompat.checkSelfPermission` on entry; request 
 **Technical Notes:**
 Resolution math: at 44100 Hz an 8192-point FFT gives ~5.4 Hz per bin. Raw bin resolution alone is insufficient below roughly A3 (semitone spacing at A2 = 110 Hz is only ~6.5 Hz), which is why parabolic interpolation is required — for isolated peaks it refines the estimate to a small fraction of a bin, comfortably covering C2 and up. Do not rely on zero-padding for resolution; it interpolates the spectrum but adds no information. The 8192-sample window (~186 ms) with a 4096-sample hop yields an analysis frame every ~93 ms, fast enough to feel live. Harmonic suppression is essential, not optional: a single piano C4 has strong partials at C5, G5, and C6 and would otherwise be misread as a chord on every keypress.
 
+*As implemented* (defaults in `PitchDetector`): search range 60–2200 Hz (small margins around C2/C7), `noiseFloorDb = 10` above the in-range median, `relativeFloorDb = 25` below the strongest peak, harmonic tolerance 3% on 2×–6× multiples, ±40 cents semitone rejection, max 6 notes. The relative floor does the real work on clean input: with a near-silent background the median is almost zero, so the median-based threshold rejects nothing — but a Hann window's first sidelobes sit ~31.5 dB below their main lobe, and the 25 dB relative floor rejects them while keeping genuine chord notes (typically within ~20 dB of the strongest). Parabolic interpolation is done on log magnitudes with the delta clamped to ±0.5 bin. The sliding window lives in `ListenClassifier` (which concatenates the previous and current chunk), keeping `PitchDetector.detect(window)` a pure function — easier to test. Note mapping dedupes peaks that round to the same MIDI note, keeping the stronger.
+
 ---
 
 ### Phase 5: Chord Identification
@@ -97,6 +101,8 @@ Resolution math: at 44100 Hz an 8192-point FFT gives ~5.4 Hz per bin. Raw bin re
 
 **Technical Notes:**
 Store interval patterns as `Set<Int>` (semitone offsets from root), e.g., major = `{0, 4, 7}`, dominant 7th = `{0, 4, 7, 10}`. Augmented and diminished-7th chords are symmetric, so multiple roots match — the bass-note preference resolves this deterministically. Display as `"<Root> <quality>"` (e.g., "G minor", "C# dim"); sharps for display, consistent with Phase 4.
+
+*As implemented:* a stateless `object`; candidate roots are restricted to the detected pitch classes (every supported pattern contains interval 0, so the root must be one of the played notes), tried bass-first. Quality display strings: " major", " minor", " dim", " aug", "7" (dominant, rendered as "G7"), " maj7", " min7", " dim7". Two-note intervals (e.g., a bare fifth) intentionally return `null` and display as the Noise dot.
 
 ---
 
@@ -115,6 +121,8 @@ Store interval patterns as `Set<Int>` (semitone offsets from root), e.g., major 
 
 **Technical Notes:**
 Raw per-frame output flickers in practice: a piano attack is broadband (classified `Noise`) for a frame or two before the pitch settles, and decay drifts back through `Noise`. Without hysteresis the screen would strobe between the dot and the note name on every keypress. The smoothing layer is plain Kotlin operating on event sequences, so it is fully unit-testable without audio. Keep thresholds as constructor parameters with the defaults above so they can be tuned during Phase 8 without code restructuring.
+
+*As implemented:* smoothing lives in its own class, `audio/EventSmoother.kt`, fed by `ListenClassifier.process()` — separating it made the scripted-sequence tests trivial. Exact semantics: a frame matching the displayed event resets all counters; a pitched display holds through up to `holdFrames = 3` unpitched frames and then clears *immediately* on the next one (no extra confirmation); every other transition requires `confirmFrames = 2` consecutive agreeing frames. One accepted quirk: a pitched candidate's confirmation count survives interleaved unpitched gap frames (Note B, Noise, Note B confirms B), which reads as correct behavior for a noisy transition between notes.
 
 ---
 
@@ -153,7 +161,7 @@ Implemented with a plain `ViewModel` rather than the planned `AndroidViewModel` 
 **Technical Notes:**
 Emulator microphone passthrough from the host is unreliable; use a physical device for the audio checks. DC-000 deferred its emulator verification — this cycle should not close with verification deferred again, since detection quality is the entire feature. Expect to iterate on thresholds here; that is why they are parameterized in Phases 4 and 6.
 
-All 22 unit tests pass (`testDebugUnitTest`) and `assembleDebug` builds clean. CLI build note: this machine's `JAVA_HOME` points to JDK 24, which Gradle 8.13 cannot run on ("Type T not present" configuration failure). Build from the CLI with `$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.7.6-hotspot'` set first; Android Studio is unaffected (uses its bundled JBR). The remaining device checks require a physical device and user verification.
+All 21 unit tests pass (`testDebugUnitTest`: PitchDetector 5, ChordIdentifier 6, EventSmoother 6, ListenClassifier 4) and `assembleDebug` builds clean. CLI build note: this machine's `JAVA_HOME` points to JDK 24, which Gradle 8.13 cannot run on ("Type T not present" configuration failure). Build from the CLI with `$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.7.6-hotspot'` set first; Android Studio is unaffected (uses its bundled JBR). The remaining device checks require a physical device and user verification.
 
 ---
 
@@ -176,6 +184,35 @@ Recorded at planning time; revisit only if testing shows they were wrong.
 - Runtime permission denial must not crash or soft-lock the screen; the denied state is a designed UI state, not an error.
 - `AudioEngine` (playback) is not used in this cycle; no changes to it.
 - Unit tests live under `app/src/test/` and require no emulator; if `testImplementation(junit)` is not already in `app/build.gradle.kts`, add it in Phase 4.
+
+---
+
+## Implementation Record (2026-06-10)
+
+Implementation of Phases 1–7 plus the unit-test portion of Phase 8 is complete. On-device verification remains.
+
+**Results:**
+- 21 unit tests, all passing, covering pitch detection (synthesized sines across C2–C7, harmonic suppression, triads), chord identification (all 8 types, inversions, symmetric-chord root preference, non-chords), display smoothing (scripted event sequences), and the end-to-end classifier (silence / tone / triad / cluster fed as phase-continuous chunks)
+- `assembleDebug` builds clean with no warnings
+- Debug APK now builds as `PianoDroid-debug.apk` (`base.archivesName = "PianoDroid"` in `app/build.gradle.kts`) instead of the default `app-debug.apk`
+- `versionName` bumped to `0.1.0`
+
+**Files created (13):**
+- `audio/`: `AudioCapture.kt`, `Fft.kt`, `PitchDetector.kt`, `ChordIdentifier.kt`, `AudioEvent.kt`, `EventSmoother.kt`, `ListenClassifier.kt`
+- `ui/`: `ListenViewModel.kt`, `ListenScreen.kt`
+- `app/src/test/`: `PitchDetectorTest.kt`, `ChordIdentifierTest.kt`, `EventSmootherTest.kt`, `ListenClassifierTest.kt`
+
+**Files modified (6):** `MainScreen.kt`, `Navigation.kt`, `ui/theme/Color.kt`, `AndroidManifest.xml`, `app/build.gradle.kts`, `gradle/libs.versions.toml`
+
+**Dependencies added:** `lifecycle-runtime-compose` (for `collectAsStateWithLifecycle` and the non-deprecated `LocalLifecycleOwner`), `junit` (test only). Still zero external DSP dependencies.
+
+**Lessons learned:**
+- Gradle 8.13 cannot run on JDK 24 — fails at configuration with "Type T not present". This machine's `JAVA_HOME` points to JDK 24, so CLI builds need `JAVA_HOME` overridden to the Temurin 21 install (see Phase 8 notes). Android Studio is unaffected.
+- On clean input the adaptive *median* noise floor rejects almost nothing (the median of a quiet spectrum is ~0); the floor *relative to the strongest peak* is what actually filters spurious peaks. 25 dB was chosen because Hann sidelobes sit ~31.5 dB down while real chord notes stay within ~20 dB.
+- Test signals fed as consecutive chunks must be phase-continuous (generate one long signal, then split). Independently generated chunks have a phase discontinuity at the window seam that smears the spectrum.
+- `LocalLifecycleOwner` in `androidx.compose.ui.platform` is deprecated; the replacement lives in `androidx.lifecycle.compose` (lifecycle-runtime-compose artifact).
+- `AudioRecord` needs no `Context`, so a plain `ViewModel` suffices — the planned `AndroidViewModel` was unnecessary.
+- Keeping every pipeline stage except `AudioCapture` free of Android imports made the whole DSP/classification chain testable on the JVM with plain JUnit — no Robolectric, no emulator.
 
 ---
 
