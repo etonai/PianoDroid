@@ -1,0 +1,7 @@
+The goal for this app is to listen to the microphone and identify the piano chord being played.
+
+The main screen will have a single button "Listen"
+
+On the Listen screen, the microphone will listen for music being played, and will identify the note or notes.
+When it identifies a note or chord, it will display the note or chord being played on the screen.
+If the app detects noise above ambient level, but does not identify the note or notes, it will just display a large light blue dot.

@@ -1,0 +1,47 @@
+# Built outputs
+/build/
+**/build/
+
+# Gradle
+.gradle/
+gradle.properties.local
+
+# Local configuration — machine-specific, never commit
+local.properties
+
+# IntelliJ / Android Studio generated files
+*.iml
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml.bak
+.idea/assetWizardSettings.xml
+.idea/navEditor.xml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml
+.idea/migrations.xml
+.idea/compiler.xml
+.idea/AndroidProjectSystem.xml
+.idea/runConfigurations.xml
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# Signing keystores — never commit private keys
+*.jks
+*.keystore
+
+# Release artifacts
+*.apk
+*.aab
+*.ap_
+
+# Profiling / captures
+/captures/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
