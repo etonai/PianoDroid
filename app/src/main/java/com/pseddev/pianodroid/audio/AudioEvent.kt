@@ -13,7 +13,10 @@ sealed class AudioEvent {
 
     /** An identified chord, e.g. "C major", with its constituent notes low-to-high. */
     data class Chord(val name: String, val notes: List<String>) : AudioEvent()
+
+    /** Sound detected with a clear pitch peak, but the frequency is more than 40 cents from any semitone. */
+    data class NoisyNote(val name: String) : AudioEvent()
 }
 
 internal val AudioEvent.isPitched: Boolean
-    get() = this is AudioEvent.Note || this is AudioEvent.Chord
+    get() = this is AudioEvent.Note || this is AudioEvent.Chord || this is AudioEvent.NoisyNote

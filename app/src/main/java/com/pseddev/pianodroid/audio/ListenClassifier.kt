@@ -40,7 +40,10 @@ class ListenClassifier(
 
         val notes = pitchDetector.detect(window)
         return when {
-            notes.isEmpty() -> AudioEvent.Noise
+            notes.isEmpty() -> {
+                val closest = pitchDetector.findClosest(window)
+                if (closest != null) AudioEvent.NoisyNote(closest.name) else AudioEvent.Noise
+            }
             notes.size == 1 -> AudioEvent.Note(notes[0].name)
             else -> {
                 val chordName = ChordIdentifier.identify(notes)

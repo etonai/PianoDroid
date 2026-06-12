@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionName = "0.0.1.0"
+val appVersionName = "0.0.1.1"
 
 android {
     namespace = "com.pseddev.pianodroid"

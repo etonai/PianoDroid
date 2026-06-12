@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pseddev.pianodroid.audio.AudioEvent
+import com.pseddev.pianodroid.ui.theme.DarkBackground
 import com.pseddev.pianodroid.ui.theme.ListenDot
 import com.pseddev.pianodroid.ui.theme.MutedText
 import com.pseddev.pianodroid.ui.theme.OnBackground
@@ -128,6 +129,19 @@ private fun ListeningContent(viewModel: ListenViewModel) {
                     .size(200.dp)
                     .background(ListenDot, CircleShape)
             )
+            is AudioEvent.NoisyNote -> Box(
+                modifier = Modifier
+                    .size(200.dp)
+                    .background(ListenDot, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = current.name,
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = DarkBackground,
+                )
+            }
             is AudioEvent.Note -> Text(
                 text = current.name,
                 style = MaterialTheme.typography.displayLarge,

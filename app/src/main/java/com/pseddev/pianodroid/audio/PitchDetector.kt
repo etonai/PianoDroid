@@ -37,6 +37,31 @@ class PitchDetector(
 
     /** Returns detected notes ordered by peak magnitude, strongest first. */
     fun detect(window: FloatArray): List<DetectedNote> {
+        val notes = mutableMapOf<Int, DetectedNote>()
+        for (peak in retainedPeaks(window)) {
+            val midiExact = 69.0 + 12.0 * log2(peak.frequency / 440.0)
+            val midi = midiExact.roundToInt()
+            if (abs(midiExact - midi) * 100.0 > maxCentsOff) continue
+            val existing = notes[midi]
+            if (existing == null || peak.magnitude > existing.magnitude) {
+                notes[midi] = DetectedNote(midi, peak.frequency, peak.magnitude)
+            }
+        }
+        return notes.values.sortedByDescending { it.magnitude }.take(maxNotes)
+    }
+
+    /**
+     * Returns the strongest peak snapped to its nearest semitone, with no tolerance check.
+     * Used when [detect] finds no in-tolerance notes but a clear pitch peak exists.
+     */
+    fun findClosest(window: FloatArray): DetectedNote? {
+        val strongest = retainedPeaks(window).maxByOrNull { it.magnitude } ?: return null
+        val midiExact = 69.0 + 12.0 * log2(strongest.frequency / 440.0)
+        val midi = midiExact.roundToInt()
+        return DetectedNote(midi, strongest.frequency, strongest.magnitude)
+    }
+
+    private fun retainedPeaks(window: FloatArray): List<Peak> {
         require(window.size == windowSize) { "expected $windowSize samples, got ${window.size}" }
 
         val re = DoubleArray(windowSize)
@@ -82,26 +107,13 @@ class PitchDetector(
         val retained = mutableListOf<Peak>()
         for (peak in peaks.sortedBy { it.frequency }) {
             val isHarmonic = retained.any { lower ->
-                lower.magnitude > peak.magnitude && run {
-                    val ratio = peak.frequency / lower.frequency
-                    val multiple = ratio.roundToInt()
-                    multiple in 2..6 && abs(ratio / multiple - 1.0) <= harmonicTolerance
-                }
+                val ratio = peak.frequency / lower.frequency
+                val multiple = ratio.roundToInt()
+                multiple in 2..6 && abs(ratio / multiple - 1.0) <= harmonicTolerance
             }
             if (!isHarmonic) retained += peak
         }
-
-        val notes = mutableMapOf<Int, DetectedNote>()
-        for (peak in retained) {
-            val midiExact = 69.0 + 12.0 * log2(peak.frequency / 440.0)
-            val midi = midiExact.roundToInt()
-            if (abs(midiExact - midi) * 100.0 > maxCentsOff) continue
-            val existing = notes[midi]
-            if (existing == null || peak.magnitude > existing.magnitude) {
-                notes[midi] = DetectedNote(midi, peak.frequency, peak.magnitude)
-            }
-        }
-        return notes.values.sortedByDescending { it.magnitude }.take(maxNotes)
+        return retained
     }
 
     private fun dbToRatio(db: Double): Double = Math.pow(10.0, db / 20.0)

@@ -187,6 +187,37 @@ Recorded at planning time; revisit only if testing shows they were wrong.
 
 ---
 
+## Post-Implementation Changes (2026-06-12)
+
+### NoisyNote: closest note displayed inside the Noise circle
+
+**Change:** When the pipeline detects a clear pitch peak but its frequency falls more than 40 cents from any semitone (previously displayed as the plain Noise dot), the app now shows the closest note name centered inside the light blue circle.
+
+- Added `AudioEvent.NoisyNote(name: String)` to `AudioEvent.kt`; included in `isPitched` so the hold-through-noise-gaps logic in `EventSmoother` keeps it stable
+- Refactored `PitchDetector` to extract the FFT → peak-pick → harmonic-suppress pipeline into a private `retainedPeaks()` method, and added `findClosest()` — takes the strongest surviving peak and snaps it to the nearest semitone with no tolerance check
+- `ListenClassifier.classify()` calls `findClosest()` as a fallback when `detect()` returns empty; emits `NoisyNote` if a peak exists, `Noise` if the spectrum is flat
+- `ListenScreen` renders `NoisyNote` as the 200dp light blue circle with the note name in `DarkBackground` (near-black) centered inside for contrast
+
+All 21 unit tests still pass; no existing test behavior changed (the `a loud unidentifiable cluster is displayed as noise` test uses 3 in-tolerance notes with no chord match, so it never reaches the `findClosest()` fallback).
+
+### Restored title and version to MainScreen
+
+`MainScreen.kt` was intentionally stripped of its title, tagline, and version number in Phase 1. These have been restored: "PianoDroid" (`displaySmall`, bold, `PrimaryColor`), "Your musical canvas." (`bodyMedium`, `MutedText`), and `v${BuildConfig.VERSION_NAME}` (`labelSmall`, faded), displayed above the Listen button with a 32dp spacer. The "Ready." placeholder was not restored.
+
+### Harmonic suppression fix for voice and non-piano sources
+
+**Problem:** The original harmonic suppression only discarded a peak if it was *weaker* than the lower-frequency peak it was a multiple of. Piano fundamentals are usually the loudest partial, so this worked correctly. Human voice (and many other instruments) often has harmonics louder than the fundamental due to formant resonances — the magnitude check was false, harmonics were kept as separate notes, and the result was misidentified chords at the wrong octave.
+
+**Fix:** Removed the magnitude check from harmonic suppression in `PitchDetector.retainedPeaks()`. A peak is now suppressed if *any* lower-frequency retained peak exists at 1/N of its frequency (within 3%), regardless of relative loudness. The lower-frequency note is always preferred when a harmonic relationship exists.
+
+This does not affect chord detection: standard chord intervals (major 3rd ≈ 1.26×, perfect 5th ≈ 1.5×, etc.) are not near integer multiples of each other and fall well outside the 3% harmonic tolerance.
+
+Remaining limitation: if the fundamental is so quiet it falls below the magnitude threshold entirely (never enters peak picking), the harmonics still appear as separate notes. Fixing that case requires a different algorithm (HPS or autocorrelation) and is deferred.
+
+All 21 unit tests still pass.
+
+---
+
 ## Implementation Record (2026-06-10)
 
 Implementation of Phases 1–7 plus the unit-test portion of Phase 8 is complete. On-device verification remains.
